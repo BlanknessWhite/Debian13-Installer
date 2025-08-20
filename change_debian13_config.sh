@@ -1,57 +1,30 @@
-cat > /root/preseed.cfg <<'EOF'
-### 设置基本信息
-d-i debian-installer/language string en
-d-i debian-installer/country string US
-d-i debian-installer/locale string en_US.UTF-8
-d-i debian-installer/keymap select us
+#!/bin/bash
+set -e
 
-### 主机名与域名
-d-i netcfg/get_hostname string US
-d-i netcfg/get_domain string localdomain
+ISO_URL="https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.0.0-amd64-netinst.iso"
+ISO_PATH="/root/debian13.iso"
+PRESEED_PATH="/root/preseed.cfg"
 
-### 网络自动配置
-d-i netcfg/choose_interface select auto
-d-i netcfg/get_nameservers string 1.0.0.1 1.1.1.1
+echo "[1/4] 下载 Debian 13 netinst ISO..."
+wget -O "$ISO_PATH" "$ISO_URL"
 
-### 时区
-d-i time/zone string America/Los_Angeles
-d-i clock-setup/utc boolean true
-d-i clock-setup/ntp boolean true
+echo "[2/4] 安装必要引导工具..."
+apt update
+apt install -y grub2-common grub-pc-bin kexec-tools
 
-### Root 密码
-d-i passwd/root-password password Homo114514@
-d-i passwd/root-password-again password Homo114514@
-
-### 禁用普通用户
-d-i passwd/make-user boolean false
-
-### 磁盘分区（全盘自动覆盖）
-d-i partman-auto/method string regular
-d-i partman-auto/choose_recipe select atomic
-d-i partman-auto/disk string /dev/sda
-d-i partman-lvm/device_remove_lvm boolean true
-d-i partman-md/device_remove_md boolean true
-d-i partman-partitioning/confirm_write_new_label boolean true
-d-i partman/confirm boolean true
-d-i partman/confirm_nooverwrite boolean true
-
-### APT 源（Debian 13 官方源）
-d-i mirror/country string manual
-d-i mirror/http/hostname string deb.debian.org
-d-i mirror/http/directory string /debian
-d-i mirror/http/proxy string
-d-i apt-setup/services-select multiselect
-d-i apt-setup/use_mirror boolean true
-d-i apt-setup/security_host string security.debian.org
-
-### 软件
-tasksel tasksel/first multiselect standard, ssh-server
-
-### 引导安装
-d-i grub-installer/only_debian boolean true
-d-i grub-installer/with_other_os boolean true
-
-### 安装完成后自动重启
-d-i finish-install/reboot_in_progress note
-
+echo "[3/4] 配置 GRUB 以一次性从 ISO 启动..."
+cat > /etc/grub.d/40_custom <<EOF
+menuentry "Install Debian 13 (Unattended)" {
+    set isofile="$ISO_PATH"
+    loopback loop (hd0,1)\$isofile
+    linux (loop)/install.amd/vmlinuz auto=true priority=critical url=file://$PRESEED_PATH
+    initrd (loop)/install.amd/initrd.gz
+}
 EOF
+
+update-grub
+
+echo "[4/4] 设置下一次重启进入安装程序..."
+echo "系统将立即重启，开始无人值守 Debian 13 安装（会覆盖整个 /dev/sda）"
+sleep 5
+reboot
